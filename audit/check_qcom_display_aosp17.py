@@ -16,6 +16,8 @@ OLD_SHA = "9ae1aba2d18b18d07c5a67b616f8e70ed25ca5be"
 OLD_TREE = "d37c0e7bd35a233be1d1570d3b8056ca626b05ef"
 SM8450_SHA = "734b422bccc9129f2f93e6364137b5c068d7bdaa"
 SM8450_TREE = "a0a2728e7461fd5922a78ca6ccde743d721aadb0"
+SONY_SM8450_SHA = "4744d4a2ee7c6c0a53fac76b54766b6eb23531d4"
+SONY_SM8450_TREE = "c97b019a8cfad9f90aa53690b4683d3b54d2ff4e"
 NEW_SHA = "baf61f736e2109522e3f72754ee7cfacbfa2dc6c"
 NEW_TREE = "f35e03e1904a346fad8257321233a32650b4ee77"
 IFACE_SHA = "735e364cbdd00b0d6e4dc33ea0866dbb6d971a11"
@@ -106,6 +108,40 @@ def check_old_sm8450(old):
             "old sm8450 display missing historical SDM/DRM sources")
     print("PASS: full old SM8450 379-file tree has SDM/DRM + HIDL Composer2")
     print("WARN: do NOT mix old 2023 SDM with newer HWC3 without exact ABI review")
+
+
+def check_sony_sm8450_reference(sony):
+    # The explicitly SM8450-family source is newer by commit date
+    # (February 2026) but still HIDL Composer2.4 and HIDL Mapper4.
+    # It has the SDM source absent from the HWC3 repo, yet that does
+    # not establish cross-branch ABI compatibility or permit mixing.
+    ref = pin(sony, "refs/remotes/origin/aosp/DISPLAY.LA.2.0.r1",
+              SONY_SM8450_SHA, SONY_SM8450_TREE,
+              "Sony-hosted Qualcomm SM8450 2026 display reference")
+    names = files(sony, ref)
+    require(len(names) == 376,
+            f"Sony SM8450 display source count drift: {len(names)}")
+    bp = show(sony, ref, "composer/Android.bp")
+    gralloc = show(sony, ref, "gralloc/Android.bp")
+    v = ET.fromstring(show(
+        sony, ref, "composer/vendor.qti.hardware.display.composer-service.xml"))
+    require('"android.hardware.graphics.composer@2.4"' in bp
+            and '"vendor.qti.hardware.display.composer@3.1"' in bp,
+            "Sony SM8450 2026 HIDL Composer contract changed")
+    require('"android.hardware.graphics.mapper@4.0"' in gralloc,
+            "Sony SM8450 2026 mapper HAL unexpectedly migrated")
+    require(any(n.startswith("sdm/libs/") for n in names)
+            and any(n.startswith("sde-drm/") for n in names),
+            "Sony SM8450 2026 SDM/DRM source coverage changed")
+    require(any(h.get("format") == "hidl"
+                and h.findtext("name") == "android.hardware.graphics.composer"
+                and h.findtext("version") == "2.4"
+                for h in v.findall("hal")),
+            "Sony SM8450 2026 composer HIDL2.4 VINTF changed")
+    print("PASS: newer-dated 2026 SM8450 display includes real SDM and SDE-DRM")
+    print("PASS: that SM8450 line remains Composer HIDL2.4/Mapper HIDL4")
+    print("DECISION: DO NOT merge old HIDL SDM or product configs into HWC3")
+    print("OPEN: find and ABI-validate matching modern HWC3 SDM/DRM sources")
 
 
 def vints(xml):
@@ -286,15 +322,16 @@ def manifest(root):
 
 
 def main():
-    require(len(sys.argv) == 6,
-            "usage: checker OLD_VENDOR OLD_SM8450 NEW_HWC3 PE_AOSP17_IFACE MANIFEST")
+    require(len(sys.argv) == 7,
+            "usage: checker OLD_VENDOR OLD_SM8450 SONY_SM8450_REF NEW_HWC3 PE_AOSP17_IFACE MANIFEST")
     roots = [Path(x).resolve() for x in sys.argv[1:]]
     require(all(x.is_dir() for x in roots), "source checkout missing")
     check_archived_vendor(roots[0])
     check_old_sm8450(roots[1])
-    check_new_source(roots[2])
-    check_aosp17_interfaces(roots[3])
-    manifest(roots[4])
+    check_sony_sm8450_reference(roots[2])
+    check_new_source(roots[3])
+    check_aosp17_interfaces(roots[4])
+    manifest(roots[5])
     print("PASS: row178 Qualcomm display source-only AIDL modernization boundary")
     print("NOT TESTED: Soong, SDM/DRM vendor ABI, VINTF, SELinux, panel, CTS/VTS")
 
