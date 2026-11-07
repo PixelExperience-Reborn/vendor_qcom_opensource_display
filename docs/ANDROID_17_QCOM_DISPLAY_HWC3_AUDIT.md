@@ -54,6 +54,18 @@ The original PE AOSP17 source owner for `hardware/interfaces` is the **PE-Reborn
 5. Keep independent PE-Reborn product/device trees; LF52406 LineageOS references only exceptional last-resort **read-only hardware evidence**. Do not copy Lineage display overlays/vendor blobs/panel config or Sony Xperia calibration and claim the ROM works on mondrian.
 6. No full build, physically tested display, modem/GPU runtime or completed Android17 ROM is claimed by this row. Static CI can only validate source identity, HAL boundaries, candidate isolation and the absence of false merges.
 
+## Verified GitHub Actions and reproducible source checkout
+
+[GitHub Actions #42329787699](https://github.com/PixelExperience-Reborn/vendor_qcom_opensource_display/actions/runs/42329787699) **SUCCESS** (the audit source checker, direct manifest validation, regression suite and official `repo`-based check completed on the exact pinned sources). Findings:
+
+- **Five exact Git commit/tree pairs** checked against original Git sources: old 2021 18-file vendor HIDL metadata/gralloc shim; old 2023 PE SM8450 full HIDL Composer2 SDM; Sony-hosted February **2026** SM8450 HIDL Composer2.4 + SDM/DRM source; Sony-hosted newer-architecture `DISPLAY.LA.5.0.r1` HWC3 AIDL v2/v3, Allocator AIDL V2 and native Mapper Stable-C V5; actual PE AOSP17 Composer3 **V1–V5** and Allocator **V1–V3** interface owner.
+- **All 25 active AOSP17 manifest stages PASS**, and the **55/55** positive/negative source-owner and candidate tests **PASS**. The two early failures were corrected adversarial-test expectations (PE's already-selected `hardware_interfaces` owner and the global historical repo deny guard), not source or build regressions.
+- Real **`repo manifest`** of `aosp17_pe_p2_qcom_display_aidl_candidate.xml` resolved to **1070 unique default-selected projects** (1069 existing + one strictly pinned HWC3 source), without changing the PE graphics/SurfaceFlinger owners.
+- Real **targeted `repo sync hardware/qcom/display`** verified exact commit **`baf61f736e2109522e3f72754ee7cfacbfa2dc6c`** and Git tree **`f35e03e1904a346fad8257321233a32650b4ee77`**.
+- The source checker **positively verified a hard failure-to-build prerequisite**: the HWC3 checkout lacks `sdm/libs/` and `sde-drm/`; the 2026 SM8450 version has these modules but is **HIDL2.4**. They cannot safely be combined without ABI and vendor checks. QDCM/backlight examples must not be used for mondrian.
+
+**Success means *source structure and Git selection only*.** A complete independent Android17 ROM, Qualcomm Composer/allocator binary, compatible SDM/DRM, vendor HWC/mapper service, Xiaomi panel functionality, VINTF/SELinux or CTS/VTS were **not** produced or tested. Both the historical `seventeen` branch and the safe `default.xml` remain unchanged.
+
 ## GitHub deliverables
 
 An isolated audit branch `audit/a17-qcom-display-hwc3-aidl-20261107` includes this pinned evidence, a deterministic source checker and GitHub Actions. Manifest branch `port/a17-aosp17-manifest-20261102` forbids historical `vendor/qcom/opensource/display` path/repo in 25 active stages and adds **five negative tests**; separate strictly pinned `aosp17_pe_p2_qcom_display_aidl_candidate.xml` includes **only** the modern Qualcomm-derived source without activating it. Matrix row178 is updated. Historical `seventeen`, `default.xml` and independent device/product stay unchanged.
