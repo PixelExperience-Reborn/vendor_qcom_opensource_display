@@ -1,0 +1,134 @@
+name: AOSP17 Qualcomm Display HWC3 / Gralloc5 boundary audit
+
+on:
+  push:
+    branches:
+      - audit/a17-qcom-display-hwc3-aidl-20261107
+    paths:
+      - 'docs/ANDROID_17_QCOM_DISPLAY_HWC3_AUDIT.md'
+      - 'audit/check_qcom_display_aosp17.py'
+      - '.github/workflows/a17-qcom-display-hwc3-boundary.yml'
+  pull_request:
+    paths:
+      - 'docs/ANDROID_17_QCOM_DISPLAY_HWC3_AUDIT.md'
+      - 'audit/check_qcom_display_aosp17.py'
+      - '.github/workflows/a17-qcom-display-hwc3-boundary.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-old-and-new-display-hal-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout archived PE vendor display helper audit source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Fetch original 2021 HIDL Mapper4 and display config helpers
+        run: |
+          git fetch -q --no-tags --depth=1 origin \
+            +refs/heads/seventeen:refs/remotes/origin/seventeen
+      - name: Fetch old SM8450 2023 HIDL Composer2 and SDM/DRM source
+        run: |
+          git init -q "$RUNNER_TEMP/old-sm8450-display"
+          git -C "$RUNNER_TEMP/old-sm8450-display" remote add origin \
+            https://github.com/PixelExperience-Reborn/hardware_qcom-caf_sm8450_display.git
+          git -C "$RUNNER_TEMP/old-sm8450-display" fetch -q --no-tags \
+            --filter=blob:none --depth=1 origin \
+            +refs/heads/seventeen:refs/remotes/origin/seventeen
+      - name: Fetch newer Qualcomm-derived HWC3, Allocator AIDL, Mapper Stable-C
+        run: |
+          git init -q "$RUNNER_TEMP/new-qcom-display"
+          git -C "$RUNNER_TEMP/new-qcom-display" remote add origin \
+            https://github.com/sonyxperiadev/hardware-qcom-display.git
+          git -C "$RUNNER_TEMP/new-qcom-display" fetch -q --no-tags \
+            --filter=blob:none --depth=1 origin \
+            +refs/heads/aosp/DISPLAY.LA.5.0.r1:refs/remotes/origin/aosp/DISPLAY.LA.5.0.r1
+      - name: Fetch actual PE AOSP17 Composer3 V5 / Allocator V3 source
+        run: |
+          git init -q "$RUNNER_TEMP/aosp17-iface"
+          git -C "$RUNNER_TEMP/aosp17-iface" remote add origin \
+            https://github.com/PixelExperience-Reborn/hardware_interfaces.git
+          git -C "$RUNNER_TEMP/aosp17-iface" fetch -q --no-tags \
+            --filter=blob:none --depth=1 origin \
+            +refs/heads/port/a17-hardware-interfaces-pe-20261103:refs/remotes/origin/port/a17-hardware-interfaces-pe-20261103
+      - name: Fetch independent PE-Reborn AOSP17 reviewed manifest
+        run: |
+          git clone -q --depth=1 \
+            --branch port/a17-aosp17-manifest-20261102 \
+            https://github.com/PixelExperience-Reborn/manifest.git \
+            "$RUNNER_TEMP/manifest"
+      - name: Verify exact HIDL, AIDL, gralloc, dependency and source-graph limits
+        run: |
+          python3 audit/check_qcom_display_aosp17.py \
+            "$GITHUB_WORKSPACE" "$RUNNER_TEMP/old-sm8450-display" \
+            "$RUNNER_TEMP/new-qcom-display" "$RUNNER_TEMP/aosp17-iface" \
+            "$RUNNER_TEMP/manifest"
+      - name: Run all adversarial Android17 source-ownership regressions
+        run: |
+          cd "$RUNNER_TEMP/manifest"
+          python3 -m unittest discover -s tools \
+            -p test_aosp17_manifest_entrypoint.py -v
+      - name: Fetch official Android repo launcher (source-only)
+        run: |
+          set -euo pipefail
+          curl -fLsS --retry 4 \
+            https://storage.googleapis.com/git-repo-downloads/repo \
+            -o "$RUNNER_TEMP/repo"
+          chmod +x "$RUNNER_TEMP/repo"
+      - name: Resolve isolated Sony-hosted Qualcomm HWC3 manifest via official repo
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/qcom-display-candidate"
+          cd "$RUNNER_TEMP/qcom-display-candidate"
+          "$RUNNER_TEMP/repo" init -q --no-clone-bundle \
+            --partial-clone --clone-filter=blob:none \
+            -u https://github.com/PixelExperience-Reborn/manifest.git \
+            -b port/a17-aosp17-manifest-20261102 \
+            -m aosp17_pe_p2_qcom_display_aidl_candidate.xml
+          "$RUNNER_TEMP/repo" manifest -o "$RUNNER_TEMP/qcom-display-flat.xml"
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          root = ET.parse(
+              os.path.join(os.environ["RUNNER_TEMP"], "qcom-display-flat.xml")
+          ).getroot()
+          projects = root.findall(".//project")
+          by_path = {p.get("path") or p.get("name"): p for p in projects}
+          assert len(projects) == len(by_path) == 1070, len(projects)
+          display = by_path["hardware/qcom/display"]
+          assert display.get("name") == "hardware-qcom-display"
+          assert display.get("revision") == "baf61f736e2109522e3f72754ee7cfacbfa2dc6c"
+          assert display.get("groups") == "device"
+          # repo canonical manifest can elide inherited default remote.
+          assert by_path["hardware/interfaces"].get("name") == "hardware_interfaces"
+          assert by_path["frameworks/av"].get("name") == "frameworks_av"
+          assert "vendor/qcom/opensource/display" not in by_path
+          assert "hardware/qcom-caf/sm8450/display" not in by_path
+          print("PASS: 1070 unique source projects; only isolated new display source")
+          print("PASS: PE AOSP17 Graphics/SurfaceFlinger owners preserved")
+          PY
+      - name: Sync only modern Qualcomm-derived HWC3 source and exact Git tree
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/qcom-display-candidate"
+          "$RUNNER_TEMP/repo" sync -c -j2 --no-tags --fail-fast hardware/qcom/display
+          cd hardware/qcom/display
+          test "$(git rev-parse HEAD)" = "baf61f736e2109522e3f72754ee7cfacbfa2dc6c"
+          test "$(git rev-parse 'HEAD^{tree}')" = "f35e03e1904a346fad8257321233a32650b4ee77"
+          grep -q "android.hardware.graphics.composer3-V3-ndk" composer/Android.bp
+          grep -q "android.hardware.graphics.allocator-V2-ndk" gralloc/Android.bp
+          test ! -d sdm/libs
+          test ! -d sde-drm
+          echo "PASS: official repo checked out exact Qualcomm-derived HWC3 source"
+          echo "BLOCKER: SDM/DRM libs not in this checkout, display cannot build alone"
+      - name: Declare hard physical device and build limitations
+        run: |
+          echo "SOURCE ONLY, NOT Android17 HWC boot or graphics HAL build."
+          echo "Do NOT import Sony/Sharp/Visionox calibration, sample backlight"
+          echo "or blindly combine older SM8450 SDM with newer Composer AIDL."
+          echo "UNTESTED: Soong, proprietary DRM/SDM ABI, VINTF/FCM, SEPolicy,"
+          echo "protected buffers, panel calibration, CTS/VTS and mondrian."
