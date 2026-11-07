@@ -39,6 +39,14 @@ jobs:
           git -C "$RUNNER_TEMP/old-sm8450-display" fetch -q --no-tags \
             --filter=blob:none --depth=1 origin \
             +refs/heads/seventeen:refs/remotes/origin/seventeen
+      - name: Fetch newer-dated 2026 SM8450 Qualcomm SDM/DRM hardware reference
+        run: |
+          git init -q "$RUNNER_TEMP/sony-sm8450-display"
+          git -C "$RUNNER_TEMP/sony-sm8450-display" remote add origin \
+            https://github.com/sonyxperiadev/vendor-qcom-opensource-display.git
+          git -C "$RUNNER_TEMP/sony-sm8450-display" fetch -q --no-tags \
+            --filter=blob:none --depth=1 origin \
+            +refs/heads/aosp/DISPLAY.LA.2.0.r1:refs/remotes/origin/aosp/DISPLAY.LA.2.0.r1
       - name: Fetch newer Qualcomm-derived HWC3, Allocator AIDL, Mapper Stable-C
         run: |
           git init -q "$RUNNER_TEMP/new-qcom-display"
@@ -65,6 +73,7 @@ jobs:
         run: |
           python3 audit/check_qcom_display_aosp17.py \
             "$GITHUB_WORKSPACE" "$RUNNER_TEMP/old-sm8450-display" \
+            "$RUNNER_TEMP/sony-sm8450-display" \
             "$RUNNER_TEMP/new-qcom-display" "$RUNNER_TEMP/aosp17-iface" \
             "$RUNNER_TEMP/manifest"
       - name: Run all adversarial Android17 source-ownership regressions
